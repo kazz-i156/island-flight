@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>島めぐりフライト</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap">
+<style>
+  :root {
+    --ink: #14283a;
+    --ink-soft: #4a6072;
+    --plate: rgba(240, 247, 250, 0.86);
+    --line: rgba(20, 40, 58, 0.16);
+    --accent: #f2b21b;
+    --accent-ink: #14283a;
+    --warn: #d8432b;
+    --page: #9cc3dc;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #eaf2f6;
+      --ink-soft: #a9bcc8;
+      --plate: rgba(16, 28, 44, 0.82);
+      --line: rgba(234, 242, 246, 0.18);
+      --accent: #f2b21b;
+      --accent-ink: #14283a;
+      --warn: #ff7a5c;
+      --page: #1b2247;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #eaf2f6;
+    --ink-soft: #a9bcc8;
+    --plate: rgba(16, 28, 44, 0.82);
+    --line: rgba(234, 242, 246, 0.18);
+    --accent: #f2b21b;
+    --accent-ink: #14283a;
+    --warn: #ff7a5c;
+    --page: #1b2247;
+  }
+  *, *::before, *::after { box-sizing: inherit; }
+  html { height: 100%; scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: var(--page);
+    color: var(--ink);
+    font-family: "Zen Maru Gothic", "Hiragino Maru Gothic ProN", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+    font-weight: 500;
+    touch-action: none;
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+  .hud {
+    position: fixed;
+    inset: 0;
+    padding:
+      calc(env(safe-area-inset-top, 0px) + 12px)
+      calc(env(safe-area-inset-right, 0px) + 12px)
+      calc(env(safe-area-inset-bottom, 0px) + 16px)
+      calc(env(safe-area-inset-left, 0px) + 12px);
+    pointer-events: none;
+  }
+  .hud > * { pointer-events: auto; }
+
+  .gauges, .rings {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 12px);
+    background: var(--plate);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    pointer-events: none;
+  }
+  .gauges {
+    left: calc(env(safe-area-inset-left, 0px) + 12px);
+    display: flex;
+    gap: 16px;
+    padding: 8px 14px;
+  }
+  .gauge { display: flex; flex-direction: column; line-height: 1.15; }
+  .gauge span { font-size: 0.72rem; color: var(--ink-soft); }
+  .gauge b {
+    font-size: 1.35rem;
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+    min-width: 3.2ch;
+  }
+  .gauge b small { font-size: 0.7rem; font-weight: 500; color: var(--ink-soft); margin-left: 2px; }
+  .gauge.is-warn b { color: var(--warn); }
+  .rings {
+    right: calc(env(safe-area-inset-right, 0px) + 12px);
+    padding: 8px 14px;
+    font-size: 0.72rem;
+    color: var(--ink-soft);
+    line-height: 1.15;
+    text-align: right;
+  }
+  .rings b {
+    display: block;
+    font-size: 1.35rem;
+    font-weight: 900;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .toast {
+    position: absolute;
+    left: 50%;
+    top: calc(env(safe-area-inset-top, 0px) + 84px);
+    transform: translateX(-50%);
+    padding: 8px 16px;
+    border-radius: 999px;
+    background: var(--plate);
+    border: 1px solid var(--line);
+    font-weight: 700;
+    font-size: 0.95rem;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.25s;
+    pointer-events: none;
+  }
+  .toast.is-on { opacity: 1; }
+  .toast.is-warn { color: var(--warn); }
+
+  /* 操縦スティック */
+  .stick {
+    position: absolute;
+    left: calc(env(safe-area-inset-left, 0px) + 20px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 28px);
+    width: 132px;
+    height: 132px;
+    border-radius: 50%;
+    background: var(--plate);
+    border: 1px solid var(--line);
+    display: none;
+    touch-action: none;
+  }
+  .stick.is-shown { display: block; }
+  .stick i {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 56px;
+    height: 56px;
+    margin: -28px 0 0 -28px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 3px 0 rgba(20, 40, 58, 0.35);
+  }
+
+  /* 出力レバー */
+  .lever {
+    position: absolute;
+    right: calc(env(safe-area-inset-right, 0px) + 20px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 28px);
+    width: 60px;
+    text-align: center;
+    font-size: 0.72rem;
+    color: var(--ink);
+    touch-action: none;
+  }
+  .lever-track {
+    position: relative;
+    height: 150px;
+    border-radius: 14px;
+    background: var(--plate);
+    border: 1px solid var(--line);
+    overflow: hidden;
+    cursor: ns-resize;
+  }
+  .lever-fill {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 0%;
+    background: var(--accent);
+  }
+  .lever-label {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--plate);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 開始・墜落ダイアログ */
+  .dialog {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(20, 40, 58, 0.28);
+  }
+  .dialog[hidden] { display: none; }
+  .dialog-body {
+    width: min(100%, 400px);
+    padding: 24px 22px 22px;
+    border-radius: 22px;
+    background: var(--plate);
+    border: 1px solid var(--line);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+  .dialog h1 {
+    margin: 0 0 8px;
+    font-size: 1.9rem;
+    font-weight: 900;
+    letter-spacing: 0.02em;
+    line-height: 1.2;
+  }
+  .dialog p { margin: 0 0 12px; line-height: 1.7; font-size: 0.95rem; }
+  .dialog dl { margin: 0 0 18px; font-size: 0.88rem; line-height: 1.6; }
+  .dialog dt { font-weight: 700; margin-top: 8px; }
+  .dialog dd { margin: 0; color: var(--ink-soft); }
+  .dialog button {
+    width: 100%;
+    padding: 14px;
+    border: 0;
+    border-radius: 14px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font: inherit;
+    font-weight: 900;
+    font-size: 1.05rem;
+    cursor: pointer;
+    box-shadow: 0 4px 0 rgba(20, 40, 58, 0.35);
+  }
+  .dialog button:active { transform: translateY(2px); box-shadow: 0 2px 0 rgba(20, 40, 58, 0.35); }
+  .dialog button:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+
+  @media (max-height: 420px) {
+    .dialog-body { padding: 14px 18px; }
+    .dialog h1 { font-size: 1.4rem; }
+    .dialog dl { margin-bottom: 10px; }
+    .lever-track { height: 110px; }
+    .stick { width: 116px; height: 116px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div class="hud" id="hud">
+  <div class="gauges">
+    <div class="gauge" id="gSpeed"><span>速度</span><b><span id="speed">0</span><small>km/h</small></b></div>
+    <div class="gauge"><span>高度</span><b><span id="alt">0</span><small>m</small></b></div>
+  </div>
+  <div class="rings">リング<b id="rings">0 / 8</b></div>
+  <div class="toast" id="toast"></div>
+
+  <div class="stick" id="stick" aria-label="操縦スティック"><i id="knob"></i></div>
+  <div class="lever" id="lever" aria-label="出力レバー">
+    <div class="lever-track" id="leverTrack"><div class="lever-fill" id="leverFill"></div></div>
+    <span class="lever-label">出力 <span id="thr">0</span>%</span>
+  </div>
+</div>
+
+<div class="dialog" id="dialog">
+  <div class="dialog-body">
+    <h1 id="dTitle">島めぐりフライト</h1>
+    <p id="dText">滑走路から飛び立って、島のあいだに浮かぶ8つのリングをくぐろう。</p>
+    <dl id="dHelp">
+      <dt>離陸のしかた</dt>
+      <dd>出力を上げて、速度が120km/hを超えたら手前に引く。</dd>
+      <dt>タッチ操作</dt>
+      <dd>左のスティックで操縦(下に引くと上昇)、右のレバーで出力。</dd>
+      <dt>キーボード</dt>
+      <dd>矢印キーかWASDで操縦(↓で上昇)、Eで出力を上げる、Qで下げる、Rでやり直し。</dd>
+    </dl>
+    <button id="dButton" type="button">飛びはじめる</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+
+  if (!window.THREE) {
+    $('dTitle').textContent = '読み込めませんでした';
+    $('dText').textContent = '3D表示の部品を読み込めませんでした。通信状況を確認して、ページを開き直してください。';
+    $('dHelp').hidden = true;
+    $('dButton').hidden = true;
+    return;
+  }
+
+  // ---------- 定数 ----------
+  var THRUST = 12, DRAG = 12 / (95 * 95), GRAV = 9.8;
+  var STALL = 28, TAKEOFF = 32, GEAR = 1.65;
+  var RUNWAY_Y = 10;
+
+  // ---------- 地形 ----------
+  var ISLANDS = [
+    { x: 0, z: 0, r: 1000, h: 60, flat: RUNWAY_Y + 6 },
+    { x: -1800, z: -1600, r: 1000, h: 260 },
+    { x: 1700, z: -2400, r: 800, h: 180 },
+    { x: 2600, z: 900, r: 1100, h: 320 },
+    { x: -2600, z: 1400, r: 700, h: 120 },
+    { x: 300, z: -3200, r: 500, h: 90 },
+    { x: -600, z: 2900, r: 600, h: 150 }
+  ];
+  function H(x, z) {
+    var m = 0;
+    for (var i = 0; i < ISLANDS.length; i++) {
+      var I = ISLANDS[i], dx = x - I.x, dz = z - I.z;
+      var q = (dx * dx + dz * dz) / (I.r * I.r);
+      if (q < 1) {
+        var b = I.h * (1 - q) * (1 - q);
+        if (I.flat) b = Math.min(b, I.flat);
+        else b *= 0.82 + 0.18 * Math.sin(x * 0.011 + i * 1.7) * Math.cos(z * 0.013 + i * 2.3);
+        if (b > m) m = b;
+      }
+    }
+    return m - 6;
+  }
+
+  // ---------- シーン ----------
+  var canvas = $('view');
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  var scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0xffffff, 1500, 9000);
+  var camera = new THREE.PerspectiveCamera(62, 1, 2, 14000);
+
+  var hemi = new THREE.HemisphereLight(0xffffff, 0x446655, 0.75);
+  scene.add(hemi);
+  var sun = new THREE.DirectionalLight(0xffffff, 0.85);
+  scene.add(sun);
+
+  // 空
+  var skyUniforms = { top: { value: new THREE.Color() }, horizon: { value: new THREE.Color() } };
+  var sky = new THREE.Mesh(
+    new THREE.SphereGeometry(10000, 24, 12),
+    new THREE.ShaderMaterial({
+      uniforms: skyUniforms,
+      side: THREE.BackSide,
+      depthWrite: false,
+      vertexShader: 'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'uniform vec3 top; uniform vec3 horizon; varying vec3 vP; void main(){ float h = normalize(vP).y; gl_FragColor = vec4(mix(horizon, top, smoothstep(0.0, 0.45, h)), 1.0); }'
+    })
+  );
+  scene.add(sky);
+  var sunDisc = new THREE.Mesh(
+    new THREE.SphereGeometry(260, 16, 12),
+    new THREE.MeshBasicMaterial({ color: 0xfff3d0, fog: false })
+  );
+  scene.add(sunDisc);
+
+  // 海
+  var seaMat = new THREE.MeshLambertMaterial({ color: 0x1f6e7a });
+  var sea = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), seaMat);
+  sea.rotation.x = -Math.PI / 2;
+  scene.add(sea);
+
+  // 島
+  (function () {
+    var g = new THREE.PlaneGeometry(8000, 8000, 160, 160);
+    g.rotateX(-Math.PI / 2);
+    var p = g.attributes.position, col = new Float32Array(p.count * 3), c = new THREE.Color();
+    for (var i = 0; i < p.count; i++) {
+      var y = H(p.getX(i), p.getZ(i));
+      p.setY(i, y);
+      if (y < 3) c.set(0xe4d2a0);
+      else if (y < 45) c.set(0x6fa35a);
+      else if (y < 120) c.set(0x4e7f4a);
+      else if (y < 190) c.set(0x8a8478);
+      else c.set(0xf4f4f0);
+      col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.computeVertexNormals();
+    scene.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true })));
+  })();
+
+  // 滑走路
+  (function () {
+    var rw = new THREE.Mesh(new THREE.PlaneGeometry(34, 1100), new THREE.MeshLambertMaterial({ color: 0x3d4248 }));
+    rw.rotation.x = -Math.PI / 2;
+    rw.position.y = RUNWAY_Y + 0.4;
+    scene.add(rw);
+    var sm = new THREE.MeshBasicMaterial({ color: 0xf2f2ea });
+    for (var z = -500; z <= 500; z += 50) {
+      var s = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 22), sm);
+      s.rotation.x = -Math.PI / 2;
+      s.position.set(0, RUNWAY_Y + 0.7, z);
+      scene.add(s);
+    }
+  })();
+
+  // 雲
+  (function () {
+    var seed = 7;
+    function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+    var geo = new THREE.IcosahedronGeometry(1, 0);
+    var mat = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true });
+    for (var i = 0; i < 28; i++) {
+      var cx = (rnd() - 0.5) * 9000, cz = (rnd() - 0.5) * 9000, cy = 380 + rnd() * 380;
+      for (var j = 0; j < 4; j++) {
+        var m = new THREE.Mesh(geo, mat), s = 50 + rnd() * 70;
+        m.scale.set(s * 1.5, s * 0.6, s);
+        m.position.set(cx + (rnd() - 0.5) * 220, cy + (rnd() - 0.5) * 30, cz + (rnd() - 0.5) * 160);
+        m.rotation.y = rnd() * 6;
+        scene.add(m);
+      }
+    }
+  })();
+
+  // 機体(前方は -Z)
+  var plane = new THREE.Group(), prop;
+  (function () {
+    var yellow = new THREE.MeshLambertMaterial({ color: 0xf2b21b, flatShading: true });
+    var navy = new THREE.MeshLambertMaterial({ color: 0x1c3554, flatShading: true });
+    var dark = new THREE.MeshLambertMaterial({ color: 0x22262b, flatShading: true });
+    function add(geo, mat, x, y, z) {
+      var m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); plane.add(m); return m;
+    }
+    var body = new THREE.CylinderGeometry(0.4, 0.9, 7, 8); body.rotateX(Math.PI / 2);
+    add(body, yellow, 0, 0, 0);
+    var nose = new THREE.ConeGeometry(0.9, 1.2, 8); nose.rotateX(-Math.PI / 2);
+    add(nose, navy, 0, 0, -4.1);
+    add(new THREE.BoxGeometry(11, 0.18, 1.8), yellow, 0, -0.25, -0.7);
+    add(new THREE.BoxGeometry(1.2, 0.2, 1.82), navy, 4.9, -0.25, -0.7);
+    add(new THREE.BoxGeometry(1.2, 0.2, 1.82), navy, -4.9, -0.25, -0.7);
+    add(new THREE.BoxGeometry(4, 0.12, 1.1), yellow, 0, 0.1, 3.0);
+    add(new THREE.BoxGeometry(0.14, 1.5, 1.2), navy, 0, 0.85, 3.0);
+    var can = add(new THREE.SphereGeometry(0.75, 8, 6), navy, 0, 0.6, -0.9);
+    can.scale.set(0.85, 0.8, 1.7);
+    var wheel = new THREE.CylinderGeometry(0.35, 0.35, 0.25, 10); wheel.rotateZ(Math.PI / 2);
+    [-1.4, 1.4].forEach(function (x) {
+      add(wheel, dark, x, -1.3, -1.0);
+      add(new THREE.BoxGeometry(0.12, 1.0, 0.12), dark, x, -0.8, -1.0);
+    });
+    prop = add(new THREE.BoxGeometry(3.4, 0.26, 0.1), dark, 0, 0, -4.75);
+    scene.add(plane);
+  })();
+
+  var shadow = new THREE.Mesh(
+    new THREE.CircleGeometry(4.5, 18),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25, depthWrite: false })
+  );
+  shadow.rotation.x = -Math.PI / 2;
+  scene.add(shadow);
+
+  // リング
+  var RING_POS = [
+    [0, 70, -900], [600, 130, -1700], [900, 200, -2900], [2300, 260, -1000],
+    [1500, 150, 600], [300, 120, 1700], [-1500, 160, 2300], [-1300, 110, 200]
+  ];
+  var rings = [], ringGeo = new THREE.TorusGeometry(26, 2.2, 8, 28);
+  RING_POS.forEach(function (p) {
+    var m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xffc233 }));
+    m.position.set(p[0], Math.max(p[1], H(p[0], p[2]) + 60), p[2]);
+    rings.push(m); scene.add(m);
+  });
+  rings.forEach(function (r, i) { r.lookAt(rings[(i + 1) % rings.length].position); });
+  rings[0].lookAt(rings[0].position.x, rings[0].position.y, rings[0].position.z - 100);
+  var ringCount = 0;
+
+  // ---------- 昼と夕方(表示テーマに合わせる) ----------
+  function isDark() {
+    var t = document.documentElement.getAttribute('data-theme');
+    if (t === 'dark') return true;
+    if (t === 'light') return false;
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+  function applyTheme() {
+    var d = isDark();
+    skyUniforms.top.value.set(d ? 0x1b2247 : 0x3f7fbf);
+    skyUniforms.horizon.value.set(d ? 0xe08a5b : 0xf3d9b8);
+    scene.fog.color.set(d ? 0xe08a5b : 0xf3d9b8);
+    seaMat.color.set(d ? 0x16384a : 0x1f6e7a);
+    hemi.intensity = d ? 0.5 : 0.75;
+    hemi.color.set(d ? 0xffc9a0 : 0xffffff);
+    sun.intensity = d ? 0.7 : 0.85;
+    sun.color.set(d ? 0xffb07a : 0xfff4e0);
+    var dir = d ? new THREE.Vector3(-0.8, 0.12, -0.55) : new THREE.Vector3(0.5, 0.6, -0.6);
+    dir.normalize();
+    sun.position.copy(dir).multiplyScalar(100);
+    sunDisc.userData.dir = dir;
+    sunDisc.material.color.set(d ? 0xffd0a0 : 0xfff8e0);
+  }
+  applyTheme();
+  if (window.matchMedia) {
+    var mq = window.matchMedia('(prefers-color-scheme: dark)');
+    if (mq.addEventListener) mq.addEventListener('change', applyTheme);
+  }
+  new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  // ---------- 状態 ----------
+  var S = { running: false, onGround: true, speed: 0, throttle: 0, heading: 0, pitchG: 0, vy: 0, airTime: 0 };
+  var inP = 0, inR = 0;
+  var fwd = new THREE.Vector3(), right = new THREE.Vector3(), tmp = new THREE.Vector3();
+  var UP = new THREE.Vector3(0, 1, 0);
+
+  function resetFlight() {
+    S.onGround = true; S.speed = 0; S.throttle = 0; S.heading = 0; S.pitchG = 0; S.vy = 0; S.airTime = 0;
+    plane.position.set(0, RUNWAY_Y + GEAR, 480);
+    plane.rotation.set(0, 0, 0, 'YXZ');
+    plane.visible = true;
+    camera.position.set(0, RUNWAY_Y + 9, 510);
+    ringCount = 0;
+    rings.forEach(function (r) { r.visible = true; });
+    inP = inR = 0;
+  }
+
+  // ---------- 入力 ----------
+  var keys = {}, stickX = 0, stickY = 0;
+  window.addEventListener('keydown', function (e) {
+    keys[e.code] = true;
+    if (/^Arrow|Space/.test(e.code)) e.preventDefault();
+    if (e.code === 'KeyR') { resetFlight(); closeDialog(); }
+    if ((e.code === 'Enter' || e.code === 'Space') && !$('dialog').hidden) { e.preventDefault(); $('dButton').click(); }
+  });
+  window.addEventListener('keyup', function (e) { keys[e.code] = false; });
+  window.addEventListener('blur', function () { keys = {}; });
+
+  var stick = $('stick'), knob = $('knob'), stickId = null;
+  function showStick() { stick.classList.add('is-shown'); }
+  if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) showStick();
+  window.addEventListener('touchstart', showStick, { once: true, passive: true });
+  function moveStick(e) {
+    var r = stick.getBoundingClientRect(), max = r.width / 2 - 28;
+    var dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+    var len = Math.hypot(dx, dy);
+    if (len > max) { dx *= max / len; dy *= max / len; }
+    stickX = dx / max; stickY = dy / max;
+    knob.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+  }
+  stick.addEventListener('pointerdown', function (e) {
+    stickId = e.pointerId; stick.setPointerCapture(e.pointerId); moveStick(e); e.preventDefault();
+  });
+  stick.addEventListener('pointermove', function (e) { if (e.pointerId === stickId) moveStick(e); });
+  function endStick(e) {
+    if (e.pointerId !== stickId) return;
+    stickId = null; stickX = stickY = 0; knob.style.transform = '';
+  }
+  stick.addEventListener('pointerup', endStick);
+  stick.addEventListener('pointercancel', endStick);
+
+  var track = $('leverTrack'), leverId = null;
+  function moveLever(e) {
+    var r = track.getBoundingClientRect();
+    S.throttle = Math.min(1, Math.max(0, 1 - (e.clientY - r.top) / r.height));
+  }
+  track.addEventListener('pointerdown', function (e) {
+    leverId = e.pointerId; track.setPointerCapture(e.pointerId); moveLever(e); e.preventDefault();
+  });
+  track.addEventListener('pointermove', function (e) { if (e.pointerId === leverId) moveLever(e); });
+  track.addEventListener('pointerup', function () { leverId = null; });
+  track.addEventListener('pointercancel', function () { leverId = null; });
+
+  // ---------- 表示まわり ----------
+  var toast = $('toast'), toastUntil = 0;
+  function showToast(text, sec, warn) {
+    toast.textContent = text;
+    toast.classList.toggle('is-warn', !!warn);
+    toast.classList.add('is-on');
+    toastUntil = performance.now() + sec * 1000;
+  }
+  var dialog = $('dialog');
+  function openDialog(title, text) {
+    $('dTitle').textContent = title;
+    $('dText').textContent = text;
+    $('dHelp').hidden = true;
+    $('dButton').textContent = 'もう一度飛ぶ';
+    dialog.hidden = false;
+    S.running = false;
+  }
+  function closeDialog() { dialog.hidden = true; S.running = true; }
+  $('dButton').addEventListener('click', function () { resetFlight(); closeDialog(); });
+
+  function crash(inWater) {
+    plane.visible = !inWater;
+    openDialog(inWater ? '海に落ちました' : '墜落しました',
+      inWater ? '海には降りられません。滑走路か、島の平らなところに降りましょう。'
+              : '着陸するときは、翼を水平にして、ゆっくり降下してください。');
+  }
+
+  var last = { speed: -1, alt: -1, thr: -1, rings: -1, warn: null };
+  function updateHud(alt, stalling) {
+    var kmh = Math.round(S.speed * 3.6), a = Math.max(0, Math.round(alt)), t = Math.round(S.throttle * 100);
+    if (kmh !== last.speed) { $('speed').textContent = kmh; last.speed = kmh; }
+    if (a !== last.alt) { $('alt').textContent = a; last.alt = a; }
+    if (t !== last.thr) { $('thr').textContent = t; $('leverFill').style.height = t + '%'; last.thr = t; }
+    if (ringCount !== last.rings) { $('rings').textContent = ringCount + ' / ' + rings.length; last.rings = ringCount; }
+    if (stalling !== last.warn) { $('gSpeed').classList.toggle('is-warn', stalling); last.warn = stalling; }
+  }
+
+  // ---------- 物理 ----------
+  function step(dt) {
+    var tp = ((keys.ArrowDown || keys.KeyS) ? 1 : 0) - ((keys.ArrowUp || keys.KeyW) ? 1 : 0);
+    var tr = ((keys.ArrowRight || keys.KeyD) ? 1 : 0) - ((keys.ArrowLeft || keys.KeyA) ? 1 : 0);
+    if (!tp) tp = stickY;
+    if (!tr) tr = stickX;
+    var k = Math.min(1, dt * 7);
+    inP += (tp - inP) * k; inR += (tr - inR) * k;
+    if (keys.KeyE) S.throttle = Math.min(1, S.throttle + dt * 0.6);
+    if (keys.KeyQ) S.throttle = Math.max(0, S.throttle - dt * 0.6);
+
+    var pos = plane.position, gh;
+
+    if (S.onGround) {
+      S.heading -= inR * 0.8 * dt * Math.min(1, S.speed / 10);
+      var want = (S.speed > 15 && inP > 0) ? inP * 0.2 : 0;
+      S.pitchG += (want - S.pitchG) * Math.min(1, dt * 4);
+      var acc = S.throttle * THRUST - DRAG * S.speed * S.speed - (S.throttle < 0.05 ? 6 : 0.6);
+      S.speed = Math.max(0, S.speed + acc * dt);
+      pos.x += -Math.sin(S.heading) * S.speed * dt;
+      pos.z += -Math.cos(S.heading) * S.speed * dt;
+      gh = H(pos.x, pos.z);
+      if (gh < 0.5) { crash(true); return; }
+      pos.y = gh + GEAR;
+      plane.rotation.set(S.pitchG, S.heading, 0, 'YXZ');
+      S.vy = 0;
+      if (S.speed > TAKEOFF && S.pitchG > 0.06) { S.onGround = false; S.airTime = 0; }
+    } else {
+      S.airTime += dt;
+      var auth = Math.min(1, Math.max(0.3, S.speed / 45));
+      plane.rotateX(inP * 1.1 * auth * dt);
+      plane.rotateZ(-inR * 2.0 * auth * dt);
+      right.set(1, 0, 0).applyQuaternion(plane.quaternion);
+      plane.rotateOnWorldAxis(UP, right.y * 0.9 * dt);            // 傾けた方向へ旋回
+      if (Math.abs(inR) < 0.05) plane.rotateZ(-right.y * 0.5 * dt); // 手を離すと水平に戻る
+      fwd.set(0, 0, -1).applyQuaternion(plane.quaternion);
+
+      S.speed += (S.throttle * THRUST - DRAG * S.speed * S.speed - GRAV * fwd.y) * dt;
+      S.speed = Math.max(5, S.speed);
+      var stallF = Math.min(1, Math.max(0, 1 - (S.speed / STALL) * (S.speed / STALL)));
+      var sink = stallF * 30;
+      if (stallF > 0) plane.rotateX(-stallF * 0.9 * dt);
+      pos.addScaledVector(fwd, S.speed * dt);
+      pos.y -= sink * dt;
+      S.vy = fwd.y * S.speed - sink;
+
+      gh = Math.max(0, H(pos.x, pos.z));
+      if (pos.y <= gh + GEAR) {
+        var flat = Math.hypot(fwd.x, fwd.z) || 1;
+        var ahead = H(pos.x + fwd.x / flat * 10, pos.z + fwd.z / flat * 10);
+        right.set(1, 0, 0).applyQuaternion(plane.quaternion);
+        var gentle = gh > 0.5 && S.vy > -8 && Math.abs(right.y) < 0.3 && fwd.y > -0.2 && ahead - gh < 3;
+        if (!gentle) { pos.y = gh + GEAR; crash(gh <= 0.5); return; }
+        S.onGround = true;
+        S.heading = Math.atan2(-fwd.x, -fwd.z);
+        S.pitchG = 0;
+        pos.y = gh + GEAR;
+        if (S.airTime > 5) showToast('着陸成功', 2.5);
+      }
+
+      // リング
+      for (var i = 0; i < rings.length; i++) {
+        if (rings[i].visible && pos.distanceTo(rings[i].position) < 25) {
+          rings[i].visible = false;
+          ringCount++;
+          if (ringCount === rings.length) {
+            showToast('全部くぐりました', 4);
+            setTimeout(function () { ringCount = 0; rings.forEach(function (r) { r.visible = true; }); }, 4000);
+          } else {
+            showToast('リング通過', 1.2);
+          }
+        }
+      }
+
+      var now = performance.now();
+      if (stallF > 0.05 && now > toastUntil) showToast('失速しています。出力を上げて機首を下げて', 1.5, true);
+      else if (Math.hypot(pos.x, pos.z) > 5500 && now > toastUntil) showToast('島から離れています。引き返しましょう', 3);
+    }
+  }
+
+  // ---------- 描画ループ ----------
+  function resize() {
+    var w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.fov = w < h ? 74 : 62;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  var prev = performance.now();
+  function frame(now) {
+    var dt = Math.min(0.05, (now - prev) / 1000);
+    prev = now;
+    if (S.running) step(dt);
+
+    var pos = plane.position;
+    prop.rotation.z += dt * (8 + S.throttle * 45);
+
+    fwd.set(0, 0, -1).applyQuaternion(plane.quaternion);
+    tmp.copy(pos).addScaledVector(fwd, -24); tmp.y += 7;
+    camera.position.lerp(tmp, 1 - Math.exp(-5 * dt));
+    var floor = Math.max(0, H(camera.position.x, camera.position.z)) + 2;
+    if (camera.position.y < floor) camera.position.y = floor;
+    tmp.copy(pos).addScaledVector(fwd, 12);
+    camera.lookAt(tmp);
+
+    sky.position.copy(camera.position);
+    sunDisc.position.copy(camera.position).addScaledVector(sunDisc.userData.dir, 9000);
+    sea.position.set(pos.x, 0, pos.z);
+
+    var gh = Math.max(0, H(pos.x, pos.z)), alt = pos.y - GEAR - gh;
+    shadow.position.set(pos.x, gh + 0.9, pos.z);
+    shadow.material.opacity = 0.3 * Math.max(0, 1 - alt / 150);
+    shadow.visible = plane.visible;
+
+    updateHud(pos.y - GEAR, !S.onGround && S.speed < STALL * 1.1);
+    if (now > toastUntil) toast.classList.remove('is-on');
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+  }
+  resetFlight();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
